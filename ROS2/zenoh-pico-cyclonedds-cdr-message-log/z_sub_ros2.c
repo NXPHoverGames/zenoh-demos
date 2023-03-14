@@ -25,9 +25,11 @@
 // CycloneDDS CDR Deserializer
 #include <dds/cdr/dds_cdrstream.h>
 
+const struct dds_cdrstream_allocator dds_cdrstream_default_allocator = { malloc, realloc, free };
+
 void idl_deser(unsigned char *buf, uint32_t sz, void *obj, const dds_topic_descriptor_t *desc) {
     dds_istream_t is = {.m_buffer = buf, .m_index = 0, .m_size = sz, .m_xcdr_version = DDSI_RTPS_CDR_ENC_VERSION_2};
-    dds_stream_read(&is, obj, desc->m_ops);
+    dds_stream_read(&is, obj, &dds_cdrstream_default_allocator, desc->m_ops);
 }
 
 void data_handler(const z_sample_t *sample, void *arg) {

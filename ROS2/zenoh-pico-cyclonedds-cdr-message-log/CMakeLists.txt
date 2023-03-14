@@ -16,36 +16,57 @@ else()
   return()
 endif()
 
-if(DEFINED ENV{ROS_DISTRO})
-  message(FATAL_ERROR "ROS2 environment sourced, you shouldn't source ROS")
-endif()
+
 
 if(NOT DEFINED ROS_DISTRO)
-  message(FATAL_ERROR "No ROS_DISTRO defined")
-else()
-  message("-- Using ROS ${ROS_DISTRO}")
+  if(NOT DEFINED ENV{ROS_DISTRO})
+    message(FATAL_ERROR "No ROS_DISTRO defined")
+  else()
+    set(ROS_DISTRO $ENV{ROS_DISTRO})
+  endif()
 endif()
+
+message("-- Using ROS ${ROS_DISTRO}")
 
 # ROS Paths
 set(ROS_PATH "/opt/ros/${ROS_DISTRO}/share")
 set(RCL_INTERFACES_PATH "${ROS_PATH}/rcl_interfaces")
 set(BUILTIN_INTERFACES_PATH "${ROS_PATH}/builtin_interfaces")
 
+# We assume that IDLC has been installed on build machine
+
+find_program(IDLC idlc)
+if(NOT IDLC)
+  message(FATAL_ERROR "IDLC not found!")
+endif()
+
+# Runs the command to get the pluginval version
+execute_process(COMMAND ${IDLC} -v
+                OUTPUT_VARIABLE IDLC_VERSION_RAW_OUTPUT)
+
+string(REPLACE "idlc (Eclipse Cyclone DDS) " "" IDLC_VERSION ${IDLC_VERSION_RAW_OUTPUT})
+
+set(IDLC_MIN_REQ "0.11.0")
+
+if("${IDLC_VERSION}" VERSION_LESS "${IDLC_MIN_REQ}")
+  message(FATAL_ERROR "IDLC is version ${IDLC_VERSION}"
+                      "Must be greater then ${IDLC_MIN_REQ}\n"
+                      "Please compile and install CycloneDDS from source")
+endif()
+
 # CycloneDDS config
 
-set(BUILD_IDLC_ONLY YES)
+set(BUILD_IDLC NO)
+set(BUILD_LIBCDR ON)
 
 # CycloneDDS IDL
 include(FetchContent)
 FetchContent_Declare(cyclonedds
-  GIT_REPOSITORY "https://github.com/eclipse-cyclonedds/cyclonedds"
-  GIT_TAG "origin/master"
+  GIT_REPOSITORY "https://github.com/NXPHoverGames/cyclonedds"
+  GIT_TAG "origin/cdr_sharedlib_option"
   SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/cyclonedds"
 )
 FetchContent_MakeAvailable(cyclonedds)
-
-set(CYCLONEDDS_DIR ${CMAKE_CURRENT_BINARY_DIR}/cyclonedds)
-include("${CYCLONEDDS_DIR}/cmake/Modules/Generate.cmake")
 
 include("${RCL_INTERFACES_PATH}/cmake/rosidl_cmake-extras.cmake")
 include("${BUILTIN_INTERFACES_PATH}/cmake/rosidl_cmake-extras.cmake")
@@ -62,11 +83,6 @@ idlc_generate(TARGET rcl_interfaces_msgs FILES ${IDL_FILES} INCLUDES ${ROS_PATH}
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories (${CMAKE_BINARY_DIR})
-include_directories (${CYCLONEDDS_DIR}/src/core/cdr/include)
-include_directories (${CYCLONEDDS_DIR}/src/ddsrt/include)
-include_directories (${CYCLONEDDS_DIR}/src/core/ddsc/include)
-include_directories (${cyclonedds_BINARY_DIR}/src/core/include/)
-include_directories (${cyclonedds_BINARY_DIR}/src/ddsrt/include/)
 
 # Zenoh-Pico
 include(FetchContent)
@@ -82,26 +98,18 @@ include_directories (${ZENOHPICO_DIR}/include)
 # Adding something we can run - Output name matches target name
 add_executable(z_pub_ros2
                z_pub_ros2.c
-               hal/heap.c
-               hal/log.c
                rcl_interfaces/msg/Log.c
-               builtin_interfaces/msg/Time.c
-               ${CYCLONEDDS_DIR}/src/core/cdr/src/dds_cdrstream.c
-               ${CYCLONEDDS_DIR}/src/ddsrt/src/bswap.c)
+               builtin_interfaces/msg/Time.c)
 add_dependencies(z_pub_ros2 zenohpico)
 
 add_executable(z_sub_ros2
                z_sub_ros2.c
-               hal/heap.c
-               hal/log.c
                rcl_interfaces/msg/Log.c
-               builtin_interfaces/msg/Time.c
-               ${CYCLONEDDS_DIR}/src/core/cdr/src/dds_cdrstream.c
-               ${CYCLONEDDS_DIR}/src/ddsrt/src/bswap.c)
+               builtin_interfaces/msg/Time.c)
 add_dependencies(z_sub_ros2 zenohpico)
 
 set(CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES /usr/local/lib ${CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES})
 target_compile_definitions(z_sub_ros2 PRIVATE "DDS_LOG=0")
 target_compile_definitions(z_pub_ros2 PRIVATE "DDS_LOG=0")
-target_link_libraries(z_sub_ros2 zenohpico)
-target_link_libraries(z_pub_ros2 zenohpico)
+target_link_libraries(z_sub_ros2 zenohpico cdr)
+target_link_libraries(z_pub_ros2 zenohpico cdr)

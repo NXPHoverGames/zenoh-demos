@@ -26,6 +26,8 @@
 // CycloneDDS CDR Deserializer
 #include <dds/cdr/dds_cdrstream.h>
 
+const struct dds_cdrstream_allocator dds_cdrstream_default_allocator = { malloc, realloc, free };
+
 // CDR Xtypes header {0x00, 0x01} indicates it's Little Endian (CDR_LE representation)
 const uint8_t ros2_header[4] = {0x00, 0x01, 0x00, 0x00};
 
@@ -121,11 +123,9 @@ int main(int argc, char **argv) {
         msg.stamp.sec = ts.tv_sec;
         msg.stamp.nanosec = ts.tv_nsec;
 
-        dds_cdrstream_desc_from_topic_desc(&desc, &rcl_interfaces_msg_Log_desc);
-
         // Do serialization
-        bool ret = dds_stream_write_sampleLE((dds_ostreamLE_t *)&os, (void *)&msg, &desc);
-        dds_cdrstream_desc_fini(&desc);
+        bool ret = dds_stream_write(&os, &dds_cdrstream_default_allocator,
+                                             (void *)&msg, rcl_interfaces_msg_Log_desc.m_ops);
 
         if (ret == true) {
             z_publisher_put_options_t options = z_publisher_put_options_default();
